@@ -1,42 +1,41 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Drawing;
 using System.Linq;
 using UnityEngine;
 
 public static class TriangleIntersector
 {
-    public static bool findIntersectionSegmentBetweenTriangles(List<Vector3> triangleA, List<Vector3> triangleB, out Vector3 start, out Vector3 end) {
+    public static bool findIntersectionSegmentBetweenTriangles(Vector3 a1, Vector3 b1, Vector3 c1, Vector3 a2, Vector3 b2, Vector3 c2, out Vector3 start, out Vector3 end) {
         start = Vector3.zero; end = Vector3.zero;
 
-        float[] distancesA = new float[3];
-        float[] distancesB = new float[3];
+        Plane p1 = new Plane(a1, b1, c1);
+        Plane p2 = new Plane(a2, b2, c2);
 
-        Plane planeA = new Plane(triangleA[0], triangleA[1], triangleA[2]);
-        Plane planeB = new Plane(triangleB[0], triangleB[1], triangleB[2]);
+        float da1 = p2.GetDistanceToPoint(a1); 
+        float db1 = p2.GetDistanceToPoint(b1); 
+        float dc1 = p2.GetDistanceToPoint(c1);
 
-        distancesA[0] = planeB.GetDistanceToPoint(triangleA[0]); distancesA[1] = planeB.GetDistanceToPoint(triangleA[1]); distancesA[2] = planeB.GetDistanceToPoint(triangleA[2]);
-        distancesB[0] = planeA.GetDistanceToPoint(triangleB[0]); distancesB[1] = planeA.GetDistanceToPoint(triangleB[1]); distancesB[2] = planeA.GetDistanceToPoint(triangleB[2]);
+        float da2 = p1.GetDistanceToPoint(a2); 
+        float db2 = p1.GetDistanceToPoint(b2); 
+        float dc2 = p1.GetDistanceToPoint(c2);
 
-        if ((Mathf.Sign(distancesA[0]) == Mathf.Sign(distancesA[1]) && Mathf.Sign(distancesA[0]) == Mathf.Sign(distancesA[2]) && Mathf.Sign(distancesA[1]) == Mathf.Sign(distancesA[2])) ||
-            (Mathf.Sign(distancesB[0]) == Mathf.Sign(distancesB[1]) && Mathf.Sign(distancesB[0]) == Mathf.Sign(distancesB[2]) && Mathf.Sign(distancesB[1]) == Mathf.Sign(distancesB[2])) ||
-            (planeA.normal == planeB.normal))
-        {
+
+
+        if (rejectionTest(da1, db1, dc1, da2, db2, dc2, p1, p2)){
             return false;
         }
 
+        PlaneIntersector.getIntersectionLineOfPlanes(a1, p1.normal, a2, p2.normal, out Vector3 o, out Vector3 d);
+        float[] i1 = getInterval(a1, b1, c1, da1, db1, dc1, o, d);
+        float[] i2 = getInterval(a2, b2, c2, da2, db2, dc2, o, d);
 
-        PlaneIntersector.getIntersectionLineOfPlanes(triangleA[0], planeA.normal, triangleB[0], planeB.normal, out Vector3 point, out Vector3 direction);
-
-        float[] interval1 = getInterval(triangleA, distancesA, point, direction);
-        float[] interval2 = getInterval(triangleB, distancesB, point, direction);
-
-        if (interval1[0] <= interval2[1] && interval2[0] <= interval1[1]){
-            float[] points = interval1.Concat(interval2).ToArray();
+        if (i1[0] <= i2[1] && i2[0] <= i1[1]){
+            float[] points = i1.Concat(i2).ToArray();
             Array.Sort(points);
-
-            start = point + points[1] * direction;
-            end = point + points[2] * direction;
+            start = o + points[1] * d;
+            end   = o + points[2] * d;
             return true;
         }
 
@@ -44,27 +43,45 @@ public static class TriangleIntersector
     }
 
 
-    static float[] getInterval(List<Vector3> triangle, float[] distances, Vector3 point, Vector3 direction)
+    static float[] getInterval(Vector3 a, Vector3 b, Vector3 c, float da, float db, float dc, Vector3 point, Vector3 direction)
     {
         float[] intervall = new float[2];
+        Vector3 aI = Vector3.zero; float daI = 0;
+        Vector3 bI = Vector3.zero; float dbI = 0;
+        Vector3 cI = Vector3.zero; float dcI = 0;
 
-        int a = 0, b = 0, c = 0;
-        if (Mathf.Sign(distances[1]) == Mathf.Sign(distances[2])) { a = 1; b = 0; c = 2; Debug.Log("1, 2 | " + a + " " + b + " " + c); }
-        if (Mathf.Sign(distances[0]) == Mathf.Sign(distances[2])) { a = 2; b = 1; c = 0; Debug.Log("0, 2 | " + a + " " + b + " " + c); }
-        if (Mathf.Sign(distances[0]) == Mathf.Sign(distances[1])) { a = 0; b = 2; c = 1; Debug.Log("0, 1 | " + a + " " + b + " " + c); }
+
+        if (Mathf.Sign(db) == Mathf.Sign(dc)) { aI = b; bI = a; cI = c;
+                                                daI = db; dbI = da; dcI = dc; }
+
+        if (Mathf.Sign(da) == Mathf.Sign(dc)) { aI = c; bI = b; cI = a;
+                                                daI = dc; dbI = db; dcI = da; }
+
+        if (Mathf.Sign(da) == Mathf.Sign(db)) { aI = a; bI = c; cI = b;
+                                                daI = da; dbI = dc; dcI = db; }
 
         float p0, p1;
+        p0 = Vector3.Dot(direction, aI - point);
+        p1 = Vector3.Dot(direction, bI - point);
+        intervall[0] = p0 + (p1 - p0) * daI / (daI - dbI);
 
-        p0 = Vector3.Dot(direction, triangle[a] - point);
-        p1 = Vector3.Dot(direction, triangle[b] - point);
-        intervall[0] = p0 + (p1 - p0) * distances[a] / (distances[a] - distances[b]);
-
-        p0 = Vector3.Dot(direction, triangle[b] - point);
-        p1 = Vector3.Dot(direction, triangle[c] - point);
-        intervall[1] = p0 + (p1 - p0) * distances[b] / (distances[b] - distances[c]);
+        p0 = Vector3.Dot(direction, bI - point);
+        p1 = Vector3.Dot(direction, cI - point);
+        intervall[1] = p0 + (p1 - p0) * dbI / (dbI - dcI);
 
         Array.Sort(intervall);
         return intervall;
+    }
+
+    static bool rejectionTest(float da1, float db1, float dc1, float da2, float db2, float dc2, Plane p1, Plane p2){
+        if ((Mathf.Sign(da1) == Mathf.Sign(db1) && Mathf.Sign(da1) == Mathf.Sign(dc1) && Mathf.Sign(db1) == Mathf.Sign(dc1)) ||
+            (Mathf.Sign(da2) == Mathf.Sign(db2) && Mathf.Sign(da2) == Mathf.Sign(dc2) && Mathf.Sign(db2) == Mathf.Sign(dc2)) || 
+            (p1.normal == p2.normal))
+            {
+                return true;
+            }
+
+        return false;
     }
 
 }
